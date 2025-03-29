@@ -50,6 +50,71 @@ int overcommit_prevention_enabled(void)
 
     if (prevent_overcommit == -1)
     {
+        int exempt_debug;
+        {
+            const char *debug_env_var = getenv( "WINE_PREVENT_OVERCOMMIT_EXEMPT_DEBUG" );
+            exempt_debug = debug_env_var && atoi(debug_env_var);
+        }
+
+        const char *env_var = getenv( "WINE_PREVENT_OVERCOMMIT_EXEMPT" );
+        if (env_var)
+        {
+            FILE *fp;
+            if (fp = fopen("/proc/self/cmdline", "r"))
+            {
+                char argument[1024];
+                char buffer[1024];
+                size_t arg_offset = 0;
+                if (exempt_debug)
+                {
+                    puts("/proc/self/cmdline tolower:");
+                }
+                size_t read;
+                do
+                {
+                    read = fread(buffer, 1, sizeof buffer, fp);
+                    for (size_t i = 0; i < read; i++)
+                    {
+                        if (arg_offset < (sizeof argument) - 1)
+                        {
+                            argument[arg_offset++] = tolower(buffer[i]);
+                        }
+                        else
+                        {
+                            argument[(sizeof argument) - 1] = '\0';
+                        }
+
+                        if (buffer[i] == '\0')
+                        {
+                            int non_empty_argument = arg_offset > 1;
+                            arg_offset = 0;
+
+                            if (non_empty_argument && exempt_debug)
+                            {
+                                puts(argument);
+                            }
+
+                            if (non_empty_argument && strstr(argument, env_var))
+                            {
+                                if (exempt_debug)
+                                {
+                                    printf(
+                                        "detected process name from WINE_PREVENT_OVERCOMMIT_EXEMPT '%s' is present in cmdline tolower argument '%s'. overcommit prevention will be turned off for this specific process.\n", 
+                                        env_var, 
+                                        argument);
+                                }
+                                prevent_overcommit = 0;
+                            }
+                        }
+                    }
+                } while (read > 0);
+                fclose(fp);
+            }
+        }
+    }
+
+    if (prevent_overcommit == -1)
+    {
         const char *env_var = getenv( "WINE_PREVENT_OVERCOMMIT" );
         prevent_overcommit = env_var && atoi(env_var);
     }
